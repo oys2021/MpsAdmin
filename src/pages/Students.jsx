@@ -1,7 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import "../styles/Pages.css"
+import { refreshAccessToken } from "../hooks/useTokenRefresh"
+
+const API_BASE_URL = "http://192.168.103.192:8080"
 
 function Students() {
   const [searchTerm, setSearchTerm] = useState("")
@@ -20,90 +23,105 @@ function Students() {
     paymentStatus: "paid"
   })
 
-  // Mock student data
-  const [students, setStudents] = useState([
-      {
-      id: "20210001",
-      name: "John Doe",
-      email: "john.doe@student.gctu.edu.gh",
-      program: "Computer Science",
-      level: "Level 200",
-      status: "active",
-      paymentStatus: "paid",
-    },
-    {
-      id: "20210042",
-      name: "Mary Smith",
-      email: "mary.smith@student.gctu.edu.gh",
-      program: "Business Administration",
-      level: "Level 300",
-      status: "active",
-      paymentStatus: "paid",
-    },
-    {
-      id: "20210078",
-      name: "David Mensah",
-      email: "david.mensah@student.gctu.edu.gh",
-      program: "Information Technology",
-      level: "Level 100",
-      status: "active",
-      paymentStatus: "pending",
-    },
-    {
-      id: "20210036",
-      name: "Sarah Addo",
-      email: "sarah.addo@student.gctu.edu.gh",
-      program: "Computer Engineering",
-      level: "Level 400",
-      status: "active",
-      paymentStatus: "paid",
-    },
-    {
-      id: "20210015",
-      name: "Michael Owusu",
-      email: "michael.owusu@student.gctu.edu.gh",
-      program: "Telecommunications Engineering",
-      level: "Level 200",
-      status: "inactive",
-      paymentStatus: "overdue",
-    },
-    {
-      id: "20210089",
-      name: "Grace Appiah",
-      email: "grace.appiah@student.gctu.edu.gh",
-      program: "Computer Science",
-      level: "Level 300",
-      status: "active",
-      paymentStatus: "pending",
-    },
-    {
-      id: "20210054",
-      name: "Emmanuel Osei",
-      email: "emmanuel.osei@student.gctu.edu.gh",
-      program: "Information Technology",
-      level: "Level 200",
-      status: "active",
-      paymentStatus: "paid",
-    },
-    {
-      id: "20210023",
-      name: "Abigail Boateng",
-      email: "abigail.boateng@student.gctu.edu.gh",
-      program: "Business Administration",
-      level: "Level 100",
-      status: "active",
-      paymentStatus: "pending",
+  const [students, setStudents] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [studentStats, setStudentStats] = useState({
+    total_students: 0,
+    total_active_students: 0,
+    new_students_this_month: 0,
+    total_inactive_students:0
+  })
+
+  useEffect(() => {
+    const fetchData = async () => {
+      await fetchStudents()
+      await fetchStudentStats()
     }
-    // ... other students
-  ])
+    fetchData()
+  }, [])
+
+  const fetchWithTokenRefresh = async (url, options = {}) => {
+    let token = localStorage.getItem("accessToken")
+    let response = await fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+        ...options.headers
+      }
+    })
+
+    // Handle token expiration
+    if (response.status === 401) {
+      const newToken = await refreshAccessToken()
+      if (newToken) {
+        token = newToken
+        response = await fetch(url, {
+          ...options,
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${newToken}`,
+            ...options.headers
+          }
+        })
+      }
+    }
+
+    return response
+  }
+
+  const fetchStudents = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const response = await fetchWithTokenRefresh(`${API_BASE_URL}/api/users/students/`)
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch students: ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      const formattedStudents = data.map((student) => ({
+        id: student.student_id,
+        name: student.full_name,
+        email: student.email,
+        program: student.student_profile?.program || "N/A",
+        level: student.student_profile?.level || "N/A",
+        status: student.student_profile?.status || "inactive",
+        paymentStatus: "pending",
+      }))
+
+      setStudents(formattedStudents)
+    } catch (error) {
+      console.error("Failed to fetch students:", error)
+      setError("Failed to load students. Please try again.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchStudentStats = async () => {
+    try {
+      const response = await fetchWithTokenRefresh(`${API_BASE_URL}/api/users/student-stats/`)
+      
+      if (!response.ok) throw new Error("Failed to fetch student stats")
+      
+      const data = await response.json()
+      setStudentStats(data)
+    } catch (err) {
+      console.error("Error fetching student stats:", err)
+    }
+  }
 
   // Filter students
   const filteredStudents = students.filter((student) => {
     const matchesSearch =
-      student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.program.toLowerCase().includes(searchTerm.toLowerCase())
+      (student.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (student.id || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (student.email || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (student.program || "").toLowerCase().includes(searchTerm.toLowerCase())
 
     if (activeTab === "all") return matchesSearch
     if (activeTab === "active") return matchesSearch && student.status === "active"
@@ -133,45 +151,82 @@ function Students() {
     setFormData(prev => ({ ...prev, [name]: value }))
   }
 
-  // Handle form submission
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    
-    if (isAddModalOpen) {
-      // Add new student
-      setStudents(prev => [
-        ...prev,
-        {
-          ...formData,
-          id: `2021${Math.floor(1000 + Math.random() * 9000)}`
-        }
-      ])
-    } else if (isEditModalOpen) {
-      // Update existing student
-      setStudents(prev => 
-        prev.map(student => 
-          student.id === selectedStudent.id ? formData : student
-        )
-      )
+
+    const generatedId = `S${Date.now().toString().slice(-6)}`
+
+    const payload = {
+      full_name: formData.name,
+      email: formData.email,
+      student_id: isAddModalOpen ? generatedId : formData.id,
+      phone_number: "0551234567",
+      password: "Student@123",
+      role: "student",
+      student_profile: {
+        program: formData.program,
+        level: formData.level,
+        status: formData.status
+      }
     }
-    
-    // Reset and close modals
-    setFormData({
-      id: "",
-      name: "",
-      email: "",
-      program: "",
-      level: "",
-      status: "active",
-      paymentStatus: "paid"
-    })
-    setIsAddModalOpen(false)
-    setIsEditModalOpen(false)
+
+    try {
+      const url = isAddModalOpen
+        ? `${API_BASE_URL}/api/users/register/`
+        : `${API_BASE_URL}/api/users/students/${selectedStudent.id}/`
+
+      const method = isAddModalOpen ? "POST" : "PUT"
+
+      const response = await fetchWithTokenRefresh(url, {
+        method,
+        body: JSON.stringify(payload)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Something went wrong")
+      }
+
+      // Refresh data from server
+      await fetchStudents()
+      
+      // Close modal and reset form
+      setIsAddModalOpen(false)
+      setIsEditModalOpen(false)
+      setFormData({
+        id: "",
+        name: "",
+        email: "",
+        program: "",
+        level: "",
+        status: "active",
+        paymentStatus: "paid"
+      })
+    } catch (error) {
+      console.error("Submit failed:", error)
+      alert(`Student save failed: ${error.message}`)
+    }
   }
 
   // Delete student
-  const deleteStudent = (id) => {
-    setStudents(prev => prev.filter(student => student.id !== id))
+  const deleteStudent = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this student?")) return
+
+    try {
+      const response = await fetchWithTokenRefresh(`${API_BASE_URL}/api/users/students/${id}/`, {
+        method: "DELETE"
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to delete student")
+      }
+
+      // Refresh student list
+      await fetchStudents()
+    } catch (error) {
+      console.error("Delete failed:", error)
+      alert(`Delete failed: ${error.message}`)
+    }
   }
 
   return (
@@ -200,7 +255,7 @@ function Students() {
           <button>🔍</button>
         </div>
         <div className="filter-options">
-          <select>
+          {/* <select>
             <option value="">All Programs</option>
             <option value="Computer Science">Computer Science</option>
             <option value="Information Technology">Information Technology</option>
@@ -214,7 +269,7 @@ function Students() {
             <option value="Level 200">Level 200</option>
             <option value="Level 300">Level 300</option>
             <option value="Level 400">Level 400</option>
-          </select>
+          </select> */}
         </div>
       </div>
 
@@ -224,28 +279,28 @@ function Students() {
           <div className="stat-header">
             <h3>Total Students</h3>
           </div>
-          <div className="stat-value">2,853</div>
+          <div className="stat-value">{studentStats.total_students.toLocaleString()}</div>
         </div>
 
         <div className="stat-card">
           <div className="stat-header">
             <h3>Active Students</h3>
           </div>
-          <div className="stat-value">2,420</div>
+          <div className="stat-value">{studentStats.total_active_students.toLocaleString()}</div>
         </div>
 
         <div className="stat-card">
           <div className="stat-header">
-            <h3>With Pending Fees</h3>
+            <h3>Inactive Students </h3>
           </div>
-          <div className="stat-value">845</div>
+          <div className="stat-value">{studentStats.total_inactive_students.toLocaleString()}</div>
         </div>
 
         <div className="stat-card">
           <div className="stat-header">
             <h3>New Registrations</h3>
           </div>
-          <div className="stat-value">124</div>
+          <div className="stat-value">{studentStats.new_students_this_month}</div>
           <div className="stat-footer">This month</div>
         </div>
       </div>
@@ -283,36 +338,50 @@ function Students() {
             </tr>
           </thead>
           <tbody>
-            {filteredStudents.map((student) => (
-              <tr key={student.id}>
-                <td>{student.id}</td>
-                <td>
-                  <div className="student-cell">
-                    <div>{student.name}</div>
-                    <div className="student-id">{student.email}</div>
-                  </div>
-                </td>
-                <td>{student.program}</td>
-                <td>{student.level}</td>
-                <td>
-                  <span className={`status-badge ${student.status}`}>
-                    {student.status.charAt(0).toUpperCase() + student.status.slice(1)}
-                  </span>
-                </td>
-                <td>
-                  <span className={`status-badge ${student.paymentStatus}`}>
-                    {student.paymentStatus.charAt(0).toUpperCase() + student.paymentStatus.slice(1)}
-                  </span>
-                </td>
-                <td>
-                  <div className="action-buttons">
-                    <button className="action-btn view" onClick={() => openViewModal(student)}>👁️</button>
-                    <button className="action-btn edit" onClick={() => openEditModal(student)}>✏️</button>
-                    <button className="action-btn delete" onClick={() => deleteStudent(student.id)}>🗑️</button>
-                  </div>
-                </td>
+            {loading ? (
+              <tr>
+                <td colSpan="7" className="loading-indicator">Loading students...</td>
               </tr>
-            ))}
+            ) : error ? (
+              <tr>
+                <td colSpan="7" className="error-indicator">{error}</td>
+              </tr>
+            ) : filteredStudents.length === 0 ? (
+              <tr>
+                <td colSpan="7" className="no-results">No students found</td>
+              </tr>
+            ) : (
+              filteredStudents.map((student) => (
+                <tr key={student.id}>
+                  <td>{student.id}</td>
+                  <td>
+                    <div className="student-cell">
+                      <div>{student.name}</div>
+                      <div className="student-id">{student.email}</div>
+                    </div>
+                  </td>
+                  <td>{student.program}</td>
+                  <td>{student.level}</td>
+                  <td>
+                    <span className={`status-badge ${student.status}`}>
+                      {student.status.charAt(0).toUpperCase() + student.status.slice(1)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`status-badge ${student.paymentStatus}`}>
+                      {student.paymentStatus.charAt(0).toUpperCase() + student.paymentStatus.slice(1)}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="action-buttons">
+                      <button className="action-btn view" onClick={() => openViewModal(student)}>👁️</button>
+                      <button className="action-btn edit" onClick={() => openEditModal(student)}>✏️</button>
+                      <button className="action-btn delete" onClick={() => deleteStudent(student.id)}>🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -443,7 +512,7 @@ function Students() {
             
             <div className="student-profile">
               <div className="profile-header">
-                <div className="avatar">{selectedStudent.name.charAt(0)}</div>
+                <div className="avatar">{selectedStudent.name?.charAt(0) || "?"}</div>
                 <div>
                   <h3>{selectedStudent.name}</h3>
                   <p>{selectedStudent.email}</p>

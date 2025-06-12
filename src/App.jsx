@@ -6,12 +6,13 @@ import Admins from "./pages/Admins"
 import Transactions from "./pages/Transactions"
 import PaymentHistory from "./pages/PaymentHistory"
 import Login from "./Login"
+ const API_BASE_URL ="http://192.168.103.192:8080"
 
-
-
+ 
 
 
 function App() {
+
   return (
     <Router>
       <Routes>
@@ -38,6 +39,9 @@ function App() {
 
 // Dashboard Home Component
 function DashboardHome() {
+
+
+
   return (
     <div className="dashboard-home">
       <div className="page-header">
@@ -51,7 +55,7 @@ function DashboardHome() {
             <h3>Total Students</h3>
             <span className="icon">👥</span>
           </div>
-          <div className="stat-value">2,853</div>
+          <div className="stat-value">2,500</div>
           <div className="stat-footer">+12% from last month</div>
         </div>
 
@@ -78,8 +82,8 @@ function DashboardHome() {
             <h3>Active Users</h3>
             <span className="icon">👤</span>
           </div>
-          <div className="stat-value">1,234</div>
-          <div className="stat-footer">+18% from last month</div>
+          <div className="stat-value">2,000</div>
+          <div className="stat-footer">Live active count</div>
         </div>
       </div>
 

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./styles/Login.css";
 
-const API_BASE_URL = 'http://192.168.43.192:8080'; 
+const API_BASE_URL = 'http://192.168.103.192:8080'; 
 
 function Login() {
   const navigate = useNavigate();
